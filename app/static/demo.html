@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Norlex IA — Banco de pruebas</title>
+<style>
+  :root {
+    --fondo: #0f1115; --panel: #171a21; --panel2: #1e222b; --borde: #2a2f3a;
+    --texto: #e6e9ef; --tenue: #9aa3b2; --acento: #4f9cf9; --ok: #3ecf8e;
+    --warn: #f5a524; --err: #f2555a; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--texto);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid var(--borde);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--tenue); font-size: 13px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 57px); }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; height: auto; } }
+
+  aside { border-right: 1px solid var(--borde); padding: 16px; overflow-y: auto; background: var(--panel); }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--tenue); margin: 20px 0 8px; }
+  aside h2:first-child { margin-top: 0; }
+  .roles { display: grid; gap: 6px; }
+  .rol {
+    text-align: left; padding: 9px 11px; border-radius: 8px; cursor: pointer;
+    background: var(--panel2); border: 1px solid var(--borde); color: var(--texto);
+    font: inherit; transition: .12s;
+  }
+  .rol:hover { border-color: var(--acento); }
+  .rol.activo { border-color: var(--acento); background: #17273c; }
+  .rol b { display: block; font-size: 14px; }
+  .rol span { color: var(--tenue); font-size: 12px; }
+
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11.5px;
+          background: var(--panel2); border: 1px solid var(--borde); color: var(--tenue); margin: 0 4px 4px 0; }
+  .chip.ok { color: var(--ok); border-color: #1e4d38; }
+  .chip.err { color: var(--err); border-color: #5c2225; }
+  .chip.warn { color: var(--warn); border-color: #5a411a; }
+
+  .herramientas { font: 12px/1.7 var(--mono); color: var(--tenue); word-break: break-word; }
+  .herramientas button {
+    display: block; width: 100%; text-align: left; margin-bottom: 3px; padding: 5px 8px;
+    background: var(--panel2); border: 1px solid var(--borde); border-radius: 6px;
+    color: var(--texto); font: inherit; cursor: pointer;
+  }
+  .herramientas button:hover { border-color: var(--acento); }
+  .herramientas button.admin::before { content: "\1F512  "; }
+
+  main { display: flex; flex-direction: column; overflow: hidden; }
+  #hilo { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 78%; padding: 11px 14px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: #1d3a5c; border: 1px solid #2b5382; }
+  .msg.bot { align-self: flex-start; background: var(--panel2); border: 1px solid var(--borde); }
+  .msg .quien { display: block; font-size: 11px; color: var(--tenue); margin-bottom: 5px; }
+  .msg .pie { display: block; margin-top: 8px; font: 11px var(--mono); color: var(--acento); }
+
+  .inspector {
+    border-top: 1px solid var(--borde); background: var(--panel);
+    max-height: 34%; overflow-y: auto; padding: 12px 20px; display: none;
+  }
+  .inspector.visible { display: block; }
+  .inspector pre {
+    margin: 6px 0 12px; padding: 10px; background: #0b0d11; border: 1px solid var(--borde);
+    border-radius: 8px; font: 12px/1.5 var(--mono); overflow-x: auto; color: #b8c2d0;
+  }
+
+  form { display: flex; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--borde); background: var(--panel); }
+  input[type=text] {
+    flex: 1; padding: 11px 13px; border-radius: 9px; border: 1px solid var(--borde);
+    background: var(--fondo); color: var(--texto); font: inherit;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--acento); }
+  button.enviar {
+    padding: 11px 20px; border-radius: 9px; border: none; background: var(--acento);
+    color: #08121f; font: inherit; font-weight: 640; cursor: pointer;
+  }
+  button.enviar:disabled { opacity: .5; cursor: not-allowed; }
+
+  .aviso {
+    margin: 0; padding: 11px 20px; background: #3a2a12; border-bottom: 1px solid #5a411a;
+    color: #ffd591; font-size: 13px;
+  }
+  .sugerencias { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 12px; background: var(--panel); }
+  .sugerencias button {
+    padding: 5px 11px; border-radius: 20px; border: 1px solid var(--borde);
+    background: var(--panel2); color: var(--texto); font: 13px inherit; cursor: pointer;
+  }
+  .sugerencias button:hover { border-color: var(--acento); }
+  .sugerencias:empty { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Norlex IA</h1>
+  <span class="sub">Banco de pruebas — cambia de rol y mira qué ve el modelo</span>
+  <span id="estado" style="margin-left:auto"></span>
+</header>
+
+<div id="aviso" class="aviso" style="display:none"></div>
+
+<div class="layout">
+  <aside>
+    <h2>Rol</h2>
+    <div class="roles" id="roles"></div>
+
+    <h2>Contexto resuelto</h2>
+    <div id="contexto"></div>
+
+    <h2>Herramientas visibles <span id="conteo-herramientas" style="color:var(--acento)"></span></h2>
+    <div class="herramientas" id="herramientas"></div>
+  </aside>
+
+  <main>
+    <div id="hilo"></div>
+    <div class="inspector" id="inspector"></div>
+    <div class="sugerencias" id="sugerencias"></div>
+    <form id="form">
+      <input type="text" id="entrada" placeholder="Escribe una pregunta…" autocomplete="off" maxlength="500">
+      <button type="submit" class="enviar">Enviar</button>
+    </form>
+  </main>
+</div>
+
+<script>
+const ROLES = [
+  { id: "",           nombre: "Visitante",         desc: "Sin iniciar sesión" },
+  { id: "titular",    nombre: "Titular",           desc: "Compró el plan" },
+  { id: "empleado",   nombre: "Usuario de empresa",desc: "Empleado invitado" },
+  { id: "admin",      nombre: "Administrador",     desc: "Staff de Norlex" },
+];
+
+let rolActual = "";
+let historial = [];
+const $ = id => document.getElementById(id);
+
+function html(s) {
+  return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+}
+
+async function api(ruta, cuerpo) {
+  const r = await fetch(ruta, cuerpo === undefined
+    ? {}
+    : { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(cuerpo) });
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(datos.detail?.mensaje || datos.detail || `HTTP ${r.status}`);
+  return datos;
+}
+
+function pintarEstado(d) {
+  const p = [];
+  p.push(d.estado === "ok"
+    ? `<span class="chip ok">BD: ${d.estado}</span>`
+    : `<span class="chip err">BD: ${d.estado}</span>`);
+  p.push(`<span class="chip">${d.ordenamientos ?? "?"} ordenamientos</span>`);
+  p.push(d.ia_habilitada
+    ? `<span class="chip ok">IA: ${d.modelo}</span>`
+    : `<span class="chip warn">IA: sin API key</span>`);
+  if (!d.firma_configurada) p.push(`<span class="chip warn">sin secreto HMAC</span>`);
+  $("estado").innerHTML = p.join("");
+}
+
+function pintarRoles() {
+  $("roles").innerHTML = ROLES.map(r =>
+    `<button class="rol ${r.id === rolActual ? "activo" : ""}" data-rol="${r.id}">
+       <b>${r.nombre}</b><span>${r.desc}</span>
+     </button>`).join("");
+  $("roles").querySelectorAll(".rol").forEach(b =>
+    b.onclick = () => cambiarRol(b.dataset.rol));
+}
+
+async function cambiarRol(rol) {
+  rolActual = rol;
+  pintarRoles();
+  historial = [];
+  $("hilo").innerHTML = "";
+  $("inspector").classList.remove("visible");
+  $("sugerencias").innerHTML = "";
+
+  const q = new URLSearchParams();
+  if (rol) q.set("rol", rol);
+  const info = await api(`/api/demo/contexto?${q}`);
+
+  $("contexto").innerHTML = `
+    <div style="margin-bottom:8px">
+      <span class="chip ${info.autenticado ? "ok" : "warn"}">${info.rol}</span>
+      ${info.empresa ? `<span class="chip">${info.empresa}</span>` : ""}
+      <span class="chip ${info.suscripcion_activa ? "ok" : "err"}">
+        ${info.suscripcion_activa ? "suscripción activa" : "sin suscripción"}
+      </span>
+    </div>
+    <div style="font:12px/1.6 var(--mono);color:var(--tenue);word-break:break-all">
+      id: ${info.employee_id ?? "—"}<br>siglas: ${Array.isArray(info.siglas_permitidas)
+        ? (info.siglas_permitidas.join(", ") || "TODAS (sin filtro)")
+        : info.siglas_permitidas}
+    </div>
+    ${info.avisos?.length ? `<div style="margin-top:8px;color:var(--warn);font-size:12px">
+      ⚠ ${info.avisos.join("<br>")}</div>` : ""}`;
+
+  $("conteo-herramientas").textContent = `(${info.herramientas.length})`;
+  $("herramientas").innerHTML = info.herramientas.map(h =>
+    `<button data-h="${h}" class="${h.startsWith("metricas")||h.includes("clientes")||h.includes("solicitudes")||h.includes("usuarios_registrados")||h.includes("sospechosa")||h.includes("sin_uso") ? "admin" : ""}">${h}</button>`
+  ).join("");
+  $("herramientas").querySelectorAll("button").forEach(b =>
+    b.onclick = () => probarHerramienta(b.dataset.h));
+
+  const q2 = new URLSearchParams();
+  if (rol) q2.set("rol", rol);
+  const bie = await api(`/api/demo/bienvenida?${q2}`);
+  agregarMensaje(bie.mensaje, "bot");
+  pintarSugerencias(bie.sugerencias || []);
+}
+
+function pintarSugerencias(lista) {
+  $("sugerencias").innerHTML = (lista || []).map(s =>
+    `<button data-q="${(s.pregunta || s.etiqueta).replace(/"/g,"&quot;")}">${s.etiqueta}</button>`).join("");
+  $("sugerencias").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { $("entrada").value = b.dataset.q; enviar(); });
+}
+
+function agregarMensaje(texto, quien, pie) {
+  const d = document.createElement("div");
+  d.className = `msg ${quien}`;
+  d.innerHTML = `<span class="quien">${quien === "user" ? "Tú" : "Asistente"}</span>` +
+                html(texto) + (pie ? `<span class="pie">${pie}</span>` : "");
+  $("hilo").appendChild(d);
+  $("hilo").scrollTop = $("hilo").scrollHeight;
+  return d;
+}
+
+async function probarHerramienta(nombre) {
+  const q = new URLSearchParams({ herramienta: nombre });
+  if (rolActual) q.set("rol", rolActual);
+  const d = await api(`/api/demo/herramienta?${q}`);
+  $("inspector").classList.add("visible");
+  $("inspector").innerHTML =
+    `<strong style="font:12px var(--mono);color:var(--acento)">${nombre}</strong>` +
+    `<pre>${JSON.stringify(d, null, 2)}</pre>`;
+  $("inspector").scrollTop = $("inspector").scrollHeight;
+}
+
+async function enviar() {
+  const texto = $("entrada").value.trim();
+  if (!texto) return;
+  $("entrada").value = "";
+  $("sugerencias").innerHTML = "";
+  agregarMensaje(texto, "user");
+
+  const btn = document.querySelector("button.enviar");
+  btn.disabled = true;
+  const provisional = agregarMensaje("…", "bot");
+
+  try {
+    const q = new URLSearchParams();
+    if (rolActual) q.set("rol", rolActual);
+    const cuerpo = { mensaje: texto, historial };
+    if (window.__ordenamientoId) cuerpo.ordenamiento_id = window.__ordenamientoId;
+    const d = await api(`/api/demo/chat?${q}`, cuerpo);
+
+    provisional.remove();
+    const pie = d.herramientas_usadas?.length
+      ? `herramientas: ${d.herramientas_usadas.join(" → ")} · ${d.iteraciones} iter`
+      : "sin herramientas";
+    agregarMensaje(d.mensaje, "bot", pie);
+    historial.push({ rol: "user", contenido: texto });
+    historial.push({ rol: "assistant", contenido: d.mensaje });
+    if (historial.length > 8) historial = historial.slice(-8);
+    pintarSugerencias(d.sugerencias);
+
+    if (d.ultima_herramienta) {
+      $("inspector").classList.add("visible");
+      $("inspector").innerHTML = `<strong style="font:12px var(--mono);color:var(--acento)">resultado crudo de las herramientas</strong><pre>${JSON.stringify(d.ultima_herramienta, null, 2)}</pre>`;
+    }
+  } catch (e) {
+    provisional.remove();
+    agregarMensaje(`⚠ ${e.message}`, "bot");
+  } finally {
+    btn.disabled = false;
+    $("entrada").focus();
+  }
+}
+
+$("form").onsubmit = e => { e.preventDefault(); enviar(); };
+
+(async function inicio() {
+  try {
+    const h = await api("/health");
+    pintarEstado(h);
+    if (!h.demo) {
+      $("aviso").style.display = "block";
+      $("aviso").textContent = "Modo demo desactivado (NORLEX_IA_DEMO). Los endpoints /api/demo/* responden 403.";
+    }
+  } catch (e) {
+    $("estado").innerHTML = `<span class="chip err">sin conexión</span>`;
+  }
+  await cambiarRol("");
+})();
+</script>
+</body>
+</html>
