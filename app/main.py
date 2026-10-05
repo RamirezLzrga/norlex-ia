@@ -113,10 +113,17 @@ class RespuestaBusqueda(BaseModel):
 # ── Endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/health")
-async def health() -> dict[str, Any]:
-    info = db.health()
+async def health(profundo: bool = False) -> dict[str, Any]:
+    """Liveness para Render. Responde rapido gracias al cache de db.health().
+
+    Con ?profundo=1 vuelve a sondear la BD sin esperar al cache: sirve para
+    diagnosing desde fuera si la BD responde de verdad.
+    """
+    info = db.health(forzar=profundo)
     info["firma_configurada"] = bool(cfg.shared_secret)
     info["demo"] = cfg.demo
+    if profundo:
+        info["advertencias"] = cfg.advertencias
     return info
 
 

@@ -1,32 +1,51 @@
 services:
   - type: web
     name: norlex-ia
-    runtime: python
+    # Docker y no "runtime: python": pyodbc necesita el driver ODBC de SQL Server
+    # en el sistema, y el runtime nativo de Render no lo trae. El Dockerfile
+    # instala msodbcsql18; con el runtime nativo el servicio no arranca.
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: starter          # el plan free se suspende a los 15 min de inactividad
     region: oregon
     branch: main
     healthCheckPath: /health
     # Render inyecta $PORT y reintenta si falla el arranque.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 65
-    buildCommand: pip install -r requirements.txt
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.12.0"
-
+      # ── Groq ──
       - key: GROQ_API_KEY
         sync: false          # se configura en el panel de Render
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
 
+      # ── Seguridad ──
+      # Render genera el secreto: copialo tal cual a la app .NET en
+      # Norlex:Ia:SharedSecret (appsettings.Production.json del servidor).
       - key: NORLEX_IA_SHARED_SECRET
-        generateValue: true  # Render genera el secreto
+        generateValue: true
       - key: NORLEX_IA_SIGNATURE_TTL
         value: "300"
 
+      # En produccion esto debe ser false: permite pedir cualquier rol sin firma.
+      - key: NORLEX_IA_DEMO
+        value: "false"
+      - key: NORLEX_IA_ALLOW_ANONYMOUS
+        value: "false"
+
+      # El navegador nunca habla con este servicio (solo .NET, servidor a
+      # servidor), asi que CORS solo hace falta para /demo durante pruebas.
+      - key: NORLEX_IA_CORS_ORIGINS
+        sync: false
+
       # ── Base de datos ──
-      # OJO: SQL Server no esta disponible en Render. Tienes que apuntar a una
-      # instancia accesible desde internet (Azure SQL, tu servidor con IP
-      # publica, o un tunel). Con Windows Auth esto NO funciona.
+      # SQL Server NO es alcanzable desde Render tal cual: no forma parte de su
+      # red. Necesitas una ruta publica a la instancia, por ejemplo:
+      #   - reenviar el puerto 1433 de tu IP publica a la del servidor SQL, o
+      #   - un tunel (Cloudflare Tunnel / Tailscale) con nombre publico, o
+      #   - mover BD_Fed a Azure SQL.
+      # Con Windows Auth esto NO funciona: Render no es Windows. Usa SQL auth.
+      # Formato: "host\\SQLEXPRESS,1433" o "host,1433".
       - key: NORLEX_DB_SERVER
         sync: false
       - key: NORLEX_DB_NAME
@@ -35,9 +54,13 @@ services:
         sync: false
       - key: NORLEX_DB_PASSWORD
         sync: false
-
-      # En produccion esto debe ser false: permite pedir cualquier rol sin firma.
-      - key: NORLEX_IA_DEMO
-        value: "false"
-      - key: NORLEX_IA_ALLOW_ANONYMOUS
-        value: "false"
+      # La BD queda expuesta a internet: cifra el trafico pero sin exigir
+      # certificado (una SQL Server con certificado autofirmado).
+      - key: NORLEX_DB_ENCRYPT
+        value: "yes"
+      - key: NORLEX_DB_TRUST_CERT
+        value: "yes"
+      - key: NORLEX_DB_TIMEOUT
+        value: "10"
+      - key: NORLEX_DB_DRIVER
+        value: ODBC Driver 18 for SQL Server

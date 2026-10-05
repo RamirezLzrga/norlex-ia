@@ -27,6 +27,13 @@ _lock = threading.Lock()
 #: Cold start de Render: la BD puede tardar unos segundos en despertar.
 _REINTENTOS = 3
 _ESPERA_REINTENTO = 1.0
+#: El health check de Render expira pronto: si la BD no responde no debe
+#: arrastrar al endpoint /health, que es el que decide si el servicio vive.
+_TIMEOUT_HEALTH = 3
+_CACHE_TTL = 30.0
+
+_health_cache: dict[str, Any] = {}
+_health_ts = 0.0
 
 
 class ErrorDB(RuntimeError):
@@ -35,7 +42,7 @@ class ErrorDB(RuntimeError):
 
 def _conectar(cfg: Config) -> pyodbc.Connection:
     try:
-        return pyodbc.connect(cfg.connection_string, timeout=10, autocommit=True)
+        return pyodbc.connect(cfg.connection_string, timeout=cfg.db_timeout, autocommit=True)
     except pyodbc.Error as exc:  # pragma: no cover - depende del entorno
         raise ErrorDB(f"No se pudo conectar a {cfg.db_server}/{cfg.db_name}: {exc}") from exc
 
@@ -181,8 +188,26 @@ def registrar_consulta(
         log.warning("No se pudo registrar la consulta: %s", exc)
 
 
-def health() -> dict[str, Any]:
-    """Estado de la conexion, para GET /health."""
+def health(forzar: bool = False) -> dict[str, Any]:
+    """Estado de la conexion, para GET /health.
+
+    El resultado se cachea unos segundos: Render llama a /health cada 30 s y
+    una consulta lenta (BD dormida, red) haria que el servicio se reinicie en
+    bucle. Con la cache, /health siempre responde en milisegundos.
+    """
+    global _health_cache, _health_ts
+
+    # El lock evita que /health y la app .NET disparen dos sondeos a la vez
+    # contra la BD (Render y el servidor preguntan al mismo tiempo).
+    with _lock:
+        ahora = time.monotonic()
+        if forzar or (not _health_cache) or ahora - _health_ts > _CACHE_TTL:
+            _health_ts = ahora
+            _health_cache = _sondear()
+        return dict(_health_cache)
+
+
+def _sondear() -> dict[str, Any]:
     cfg = get_config()
     info: dict[str, Any] = {
         "servidor": cfg.db_server,
@@ -190,11 +215,23 @@ def health() -> dict[str, Any]:
         "ia_habilitada": cfg.ia_habilitada,
         "modelo": cfg.modelo if cfg.ia_habilitada else None,
     }
+    # Conexion propia y corta: el health check no puede quedarse esperando lo
+    # que tarde la red, y asi no calienta ni ensucia la conexion del pool.
+    con = None
     try:
-        with _lock:
-            info["ordenamientos"] = escalar("SELECT COUNT(*) FROM LEGISXXI")
+        con = pyodbc.connect(cfg.connection_string, timeout=_TIMEOUT_HEALTH, autocommit=True)
+        cur = con.cursor()
+        cur.execute("SELECT COUNT(*) FROM LEGISXXI")
+        info["ordenamientos"] = cur.fetchone()[0]
+        cur.close()
         info["estado"] = "ok"
-    except ErrorDB as exc:
+    except pyodbc.Error as exc:
         info["estado"] = "degradado"
         info["error"] = str(exc)
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except pyodbc.Error:
+                pass
     return info

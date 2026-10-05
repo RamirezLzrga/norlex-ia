@@ -139,40 +139,64 @@ podria pedir el rol `admin`.
 Si, se puede subir. El repo ya trae `render.yaml`, `Procfile` y `Dockerfile`.
 En el panel: New > Blueprint, apuntas al repo y Render lee el `render.yaml`.
 
-**El bloqueo real no es Render, es la base de datos.** Ahora mismo el servicio
-usa `Trusted_Connection` (Windows Auth) contra `.\SQLEXPRESS`, y Render no puede
-alcanzar eso. Necesitas una de estas:
+**El repo se despliega con `runtime: docker`, no con el runtime nativo de Python.**
+No es capricoso: `pyodbc` necesita el driver ODBC de SQL Server instalado en el
+sistema, y el runtime nativo de Render no lo trae (el servicio no arranca). El
+`Dockerfile` instala `msodbcsql18` y `unixodbc-dev`.
+
+**El bloqueo real no es Render, es la base de datos.** El servicio hoy usa
+`Trusted_Connection` (Windows Auth) contra `.\SQLEXPRESS`, y Render no puede
+alcanzar eso: no esta en su red y ademas no es Windows. Necesitas una de estas:
 
 | Opcion | Como |
 |---|---|
-| Azure SQL | la mas comoda para .NET; migras `BD_Fed` y pones los env vars |
+| Azure SQL | la mas comoda: migras `BD_Fed` y pones los env vars |
 | Tu SQL Server con IP publica | abrir el 1433 y crear un login SQL, con firewall por IP |
-| Tunel (ngrok / tailscale) | solo para desarrollo, no para produccion |
+| Tunel (Cloudflare Tunnel / ngrok / tailscale) | para desarrollo, no produccion |
+
+Verificado en la red actual: `192.168.1.73:1433` responde dentro de la LAN, pero
+la IP publica `187.235.31.29:1433` **no** responde. Ese puerto hay que reenviarlo
+o tunelizarlo; sin eso Render no ve la BD.
 
 Con cualquiera de las dos primeras defines en Render:
 
 ```
-NORLEX_DB_SERVER   = tcp:tu-servidor,1433   (o el host de Azure)
+NORLEX_DB_SERVER   = 187.235.31.29\SQLEXPRESS,1433   (o el host de Azure)
 NORLEX_DB_NAME     = BD_Fed
 NORLEX_DB_USER     = sa  (o un login de solo lectura)
 NORLEX_DB_PASSWORD = ...
-NORLEX_IA_SHARED_SECRET = el mismo que pongas en appsettings.Local.json
+NORLEX_DB_ENCRYPT  = yes     # cifra el trafico: la BD queda expuesta a internet
+NORLEX_DB_TRUST_CERT = yes   # el certificado de SQL Server suele ser autofirmado
+NORLEX_IA_SHARED_SECRET = el mismo que pongas en appsettings.Production.json
 GROQ_API_KEY       = una key valida de console.groq.com
 NORLEX_IA_DEMO     = false
 NORLEX_IA_ALLOW_ANONYMOUS = false
 ```
 
-Dos avisos sobre el plan:
+`NORLEX_DB_SERVER` se pasa tal cual a `SERVER=`, asi que acepta las tres formas
+que ODBC entiende: `NOMBREINSTANCIA` (local), `host\SQLEXPRESS,1433` (instancia
+remota) y `host,1433`. Anade `,puerto` cuando la instancia no escucha en el 1433.
+
+El cifrado ya no se decide en el codigo: `Encrypt` y `TrustServerCertificate` salen
+de `NORLEX_DB_ENCRYPT` y `NORLEX_DB_TRUST_CERT`. Si dejas el cifrado apagado con la
+BD expuesta a internet, `/health?profundo=1` te avienta un
+`advertencias` con el texto correspondiente.
+
+Tres avisos sobre el plan:
 
 - **El plan free suspende el contenedor a los 15 minutos.** La primera peticion
   tardara ~50 s en despertar y mientras tanto la base puede seguir cerrada, por
   eso `db._obtener_conexion` reintenta 3 veces. Para produccion, plan *starter*.
+- **Por lo mismo, sube `Norlex:Ia:TimeoutSegundos` a 90** en el servidor: con 45
+  el .NET corta la peticion antes de que Render despierte. Y con el plan free,
+  `Norlex:Ia:Reintentos` a 3 ayuda a sobrevivir el primer despertar.
 - **Crea un login de solo lectura** para el servicio. Hoy escribe en `Auditoria`
   y `Consultas`, asi que necesita esos permisos, pero no `db_owner`.
 
-Si prefieres Azure SQL, el connection string cambia un poco: hay que quitar
-`Encrypt=no` y poner `Encrypt=yes;TrustServerCertificate=yes`. Si usas el
-servidor por nombre en el connection string actual ya funciona.
+`/health` responde en milisegundos aunque la BD este dormida: el sondeo real va
+cacheado 30 s y aparte, con conexion propia y 3 s de timeout, para que Render no
+marque el servicio como unhealthy. Para comprobar la BD de verdad:
+`GET /health?profundo=1` (sondea siempre y devuelve `advertencias`).
 
 ## Seguridad
 

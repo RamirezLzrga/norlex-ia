@@ -22,11 +22,23 @@ class Config:
     modelo: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
 
     # ── SQL Server ──
+    #: Acepta las tres formas que ODBC entiende:
+    #:   "NOMBREINSTANCIA"        -> localhost (Windows Auth)
+    #:   "host\\SQLEXPRESS,1433"  -> instancia remota con puerto explicito
+    #:   "host,1433"              -> instancia por defecto con puerto
     db_server: str = os.getenv("NORLEX_DB_SERVER", r".\SQLEXPRESS")
     db_name: str = os.getenv("NORLEX_DB_NAME", "BD_Fed")
     db_driver: str = os.getenv("NORLEX_DB_DRIVER", "ODBC Driver 18 for SQL Server")
     db_user: str = os.getenv("NORLEX_DB_USER", "").strip()
     db_password: str = os.getenv("NORLEX_DB_PASSWORD", "")
+    #: Segundos de espera al abrir la conexion. En la nube la BD puede tardar
+    #: en despertar, pero si el timeout es largo el health check expira.
+    db_timeout: int = int(os.getenv("NORLEX_DB_TIMEOUT", "10"))
+    #: Con el Driver 18 el cifrado viene activado y por eso una SQL Server sin
+    #: certificado valido rechaza la conexion. En una BD expuesta a internet lo
+    #: correcto es cifrar sin validar el certificado.
+    db_encrypt: bool = _bool("NORLEX_DB_ENCRYPT", False)
+    db_trust_cert: bool = _bool("NORLEX_DB_TRUST_CERT", True)
 
     # ── Seguridad ──
     shared_secret: str = os.getenv("NORLEX_IA_SHARED_SECRET", "").strip()
@@ -59,8 +71,8 @@ class Config:
             f"DRIVER={{{self.db_driver}}}",
             f"SERVER={self.db_server}",
             f"DATABASE={self.db_name}",
-            "TrustServerCertificate=yes",
-            "Encrypt=no",
+            f"TrustServerCertificate={'yes' if self.db_trust_cert else 'no'}",
+            f"Encrypt={'yes' if self.db_encrypt else 'no'}",
         ]
         if self.db_user:
             partes.append(f"UID={self.db_user}")
@@ -87,6 +99,11 @@ class Config:
             avisos.append(
                 "La BD usa Windows Auth: el servicio debe correr en la misma maquina "
                 "que SQL Server. Define NORLEX_DB_USER y NORLEX_DB_PASSWORD para moverlo."
+            )
+        elif not self.db_encrypt:
+            avisos.append(
+                "NORLEX_DB_ENCRYPT esta apagado: el trafico hacia SQL Server no va cifrado. "
+                "Activalo en cuanto la BD este expuesta a internet."
             )
         return avisos
 
